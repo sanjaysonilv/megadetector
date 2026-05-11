@@ -1,0 +1,44 @@
+name: export mdv1000 onnx
+
+on:
+  workflow_dispatch:
+
+jobs:
+  export-and-validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install onnx onnxruntime
+
+      - name: Export and validate ONNX models
+        run: |
+          mkdir -p artifacts/mdv1000-onnx
+          python -m megadetector.detection.export_mdv1000_to_onnx \
+            --output-dir artifacts/mdv1000-onnx \
+            --image-path images/idaho-camera-traps.jpg \
+            --detection-threshold 0.2 \
+            --iou-threshold 0.9 \
+            --strict
+
+      - name: Upload ONNX artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdv1000-onnx-artifacts
+          path: |
+            artifacts/mdv1000-onnx/**/*.onnx
+            artifacts/mdv1000-onnx/**/*.onnx.data
+            artifacts/mdv1000-onnx/validation_summary.json
+          if-no-files-found: warn
