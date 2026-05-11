@@ -254,7 +254,34 @@ def _compare(pt_dets, onnx_dets, iou_threshold):
     }
 
 
-def _validate_model(model_name, output_dir, image_path, detection_threshold, iou_threshold):
+def _preprocess_for_export(detector, image, image_path, square_input=False):
+    if not square_input:
+        return detector.preprocess_image(image, image_id=image_path, image_size=None)
+
+    image_np = np.asarray(image)
+    target_size = detector.default_image_size
+    target_shape = (target_size, target_size)
+    img_processed, letterbox_ratio, letterbox_pad = pytorch_detector.letterbox(
+        image_np,
+        new_shape=target_shape,
+        stride=detector.letterbox_stride,
+        auto=False,
+        scaleFill=False,
+        scaleup=True,
+    )
+    return {
+        'file': image_path,
+        'img_processed': img_processed,
+        'img_original': image_np,
+        'img_original_pil': image,
+        'target_shape': target_shape,
+        'scaling_shape': image_np.shape,
+        'letterbox_ratio': letterbox_ratio,
+        'letterbox_pad': letterbox_pad,
+    }
+
+
+def _validate_model(model_name, output_dir, image_path, detection_threshold, iou_threshold, square_input=False):
     print(f'=== {model_name}: downloading model ===')
     model_path = try_download_known_detector(model_name, force_download=False)
     print(f'Model path: {model_path}')
@@ -266,7 +293,7 @@ def _validate_model(model_name, output_dir, image_path, detection_threshold, iou
 
     print(f'=== {model_name}: preprocessing image {image_path} ===')
     image = Image.open(image_path).convert('RGB')
-    image_info = detector.preprocess_image(image, image_id=image_path, image_size=None)
+    image_info = _preprocess_for_export(detector, image, image_path, square_input=square_input)
 
     img = image_info['img_processed']
     batch_tensor = torch.from_numpy(np.ascontiguousarray(img.transpose((2, 0, 1)))).unsqueeze(0).float() / 255.0
@@ -317,6 +344,7 @@ def _parse_args():
     parser.add_argument('--image-path', default='images/idaho-camera-traps.jpg')
     parser.add_argument('--detection-threshold', type=float, default=0.2)
     parser.add_argument('--iou-threshold', type=float, default=0.9)
+    parser.add_argument('--square-input', action='store_true')
     parser.add_argument('--strict', action='store_true')
     return parser.parse_args()
 
@@ -345,6 +373,7 @@ def main():
                 image_path=image_path,
                 detection_threshold=args.detection_threshold,
                 iou_threshold=args.iou_threshold,
+                square_input=args.square_input,
             )
             summaries.append(summary)
         except Exception as e:

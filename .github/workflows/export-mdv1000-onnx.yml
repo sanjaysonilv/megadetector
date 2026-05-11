@@ -35,6 +35,7 @@ jobs:
             --image-path images/idaho-camera-traps.jpg \
             --detection-threshold 0.2 \
             --iou-threshold 0.9 \
+            --square-input \
             --strict
 
       - name: Upload ONNX artifacts
