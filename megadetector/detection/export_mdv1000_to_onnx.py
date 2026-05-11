@@ -1,5 +1,5 @@
 """
-Export MDv1000 redwood/sorrel models to ONNX and validate predictions.
+Export MDv1000 family models to ONNX and validate predictions.
 
 Large exports may produce sidecar .onnx.data files when external tensor data is used.
 """
@@ -19,6 +19,15 @@ from PIL import Image
 from megadetector.detection import pytorch_detector
 from megadetector.detection.run_detector import try_download_known_detector
 from megadetector.utils import ct_utils
+
+
+MDV1000_MODELS = [
+    'mdv1000-redwood',
+    'mdv1000-cedar',
+    'mdv1000-larch',
+    'mdv1000-sorrel',
+    'mdv1000-spruce',
+]
 
 
 @dataclass
@@ -344,13 +353,14 @@ def _parse_args():
     parser.add_argument('--image-path', default='images/idaho-camera-traps.jpg')
     parser.add_argument('--detection-threshold', type=float, default=0.2)
     parser.add_argument('--iou-threshold', type=float, default=0.9)
+    parser.add_argument('--models', nargs='+', default=MDV1000_MODELS)
     parser.add_argument('--square-input', action='store_true')
     parser.add_argument('--strict', action='store_true')
     return parser.parse_args()
 
 
 def main():
-    """Export and validate both target MDv1000 models."""
+    """Export and validate target MDv1000 models."""
 
     args = _parse_args()
 
@@ -361,11 +371,10 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    models = ['mdv1000-redwood', 'mdv1000-sorrel']
     summaries = []
     had_error = False
 
-    for model_name in models:
+    for model_name in args.models:
         try:
             summary = _validate_model(
                 model_name=model_name,
