@@ -35,6 +35,7 @@ jobs:
             --image-path images/idaho-camera-traps.jpg \
             --detection-threshold 0.2 \
             --iou-threshold 0.9 \
+            --models mdv1000-redwood mdv1000-cedar mdv1000-larch mdv1000-sorrel mdv1000-spruce \
             --square-input \
             --strict
 
