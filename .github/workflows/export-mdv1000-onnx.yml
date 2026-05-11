@@ -20,7 +20,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install onnx onnxruntime
+          pip install onnxruntime
+          pip install ultralytics
+          pip install onnxscript
 
       - name: Export and validate ONNX models
         run: |

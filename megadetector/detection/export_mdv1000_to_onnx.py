@@ -20,6 +20,8 @@ from megadetector.utils import ct_utils
 
 @dataclass
 class ValidationSummary:
+    """Validation metrics for one model export."""
+
     model: str
     pt_model_path: str
     onnx_model_path: str
@@ -57,11 +59,11 @@ def _export_model_to_onnx(model, example_input, onnx_path):
 
     kwargs = dict(
         export_params=True,
-        opset_version=13,
+        opset_version=18,
         do_constant_folding=True,
         input_names=['images'],
         output_names=['predictions'],
-        dynamic_axes={'images': {0: 'batch_size'}, 'predictions': {0: 'batch_size'}}
+        dynamic_axes={'images': {0: 'batch_size'}, 'predictions': {0: 'batch_size'}},
     )
 
     try:
@@ -69,7 +71,7 @@ def _export_model_to_onnx(model, example_input, onnx_path):
             wrapped,
             example_input,
             onnx_path,
-            use_external_data_format=True,
+            external_data=True,
             **kwargs,
         )
     except TypeError:
@@ -124,9 +126,24 @@ def _iou_xywh(box_a, box_b):
 def _postprocess(pred_np, image_info, detector, detection_threshold):
     pred_tensor = torch.from_numpy(pred_np)
     nms_iou_thres = 0.45 if 'classic' in detector.compatibility_mode else 0.6
-    pred = pytorch_detector.nms(prediction=pred_tensor,
-                                conf_thres=detection_threshold,
-                                iou_thres=nms_iou_thres)
+    use_library_nms = (
+        (pytorch_detector.yolo_model_type_imported is not None)
+        and (pytorch_detector.yolo_model_type_imported == 'ultralytics')
+    )
+    if use_library_nms:
+        pred = pytorch_detector.non_max_suppression(
+            prediction=pred_tensor,
+            conf_thres=detection_threshold,
+            iou_thres=nms_iou_thres,
+            agnostic=False,
+            multi_label=False,
+        )
+    else:
+        pred = pytorch_detector.nms(
+            prediction=pred_tensor,
+            conf_thres=detection_threshold,
+            iou_thres=nms_iou_thres,
+        )
 
     det = pred[0]
     detections = []
@@ -145,7 +162,9 @@ def _postprocess(pred_np, image_info, detector, detection_threshold):
     else:
         ratio = (img_original.shape[0] / scaling_shape[0], img_original.shape[1] / scaling_shape[1])
         ratio_pad = (ratio, letterbox_pad)
-        pytorch_detector.scale_coords(image_info['img_processed'].shape[:2], det[:, :4], scaling_shape, ratio_pad).round()
+        pytorch_detector.scale_coords(
+            image_info['img_processed'].shape[:2], det[:, :4], scaling_shape, ratio_pad
+        ).round()
 
     for *xyxy, conf, cls in reversed(det):
         if conf < detection_threshold:
@@ -247,11 +266,12 @@ def _validate_model(model_name, output_dir, image_path, detection_threshold, iou
     batch_tensor = torch.from_numpy(np.ascontiguousarray(img.transpose((2, 0, 1)))).unsqueeze(0).float() / 255.0
 
     onnx_path = os.path.join(output_dir, f'md_{model_name}.onnx')
+    print(f'=== {model_name}: running PT and ONNX inference ===')
+    pt_raw = _run_pytorch_raw(detector, batch_tensor)
+
     print(f'=== {model_name}: exporting ONNX to {onnx_path} ===')
     _export_model_to_onnx(detector.model, batch_tensor, onnx_path)
 
-    print(f'=== {model_name}: running PT and ONNX inference ===')
-    pt_raw = _run_pytorch_raw(detector, batch_tensor)
     onnx_raw = _run_onnx_raw(onnx_path, batch_tensor)
 
     pt_dets = _postprocess(pt_raw, image_info, detector, detection_threshold)
@@ -284,6 +304,8 @@ def _validate_model(model_name, output_dir, image_path, detection_threshold, iou
 
 
 def parse_args():
+    """Parse CLI arguments."""
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--output-dir', required=True)
     parser.add_argument('--image-path', default='images/idaho-camera-traps.jpg')
@@ -294,6 +316,8 @@ def parse_args():
 
 
 def main():
+    """Export and validate both target MDv1000 models."""
+
     args = parse_args()
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
