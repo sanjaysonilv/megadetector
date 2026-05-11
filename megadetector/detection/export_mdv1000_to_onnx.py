@@ -1,10 +1,13 @@
 """
 Export MDv1000 redwood/sorrel models to ONNX and validate predictions.
+
+Large exports may produce sidecar .onnx.data files when external tensor data is used.
 """
 
 import argparse
 import json
 import os
+import traceback
 from dataclasses import asdict
 from dataclasses import dataclass
 
@@ -38,7 +41,9 @@ class ValidationSummary:
 
 
 def _ensure_parent(path):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
 
 
 class _ExportWrapper(torch.nn.Module):
@@ -75,6 +80,7 @@ def _export_model_to_onnx(model, example_input, onnx_path):
             **kwargs,
         )
     except TypeError:
+        # Older PyTorch versions may not support the external_data argument.
         torch.onnx.export(
             wrapped,
             example_input,
@@ -222,7 +228,7 @@ def _compare(pt_dets, onnx_dets, iou_threshold):
         conf_diffs.append(abs(float(p['conf']) - float(o['conf'])))
         ious.append(iou)
 
-    def _safe_stat(values, fn, default=0.0):
+    def _compute_stat_or_default(values, fn, default=0.0):
         if not values:
             return default
         return float(fn(values))
@@ -230,20 +236,20 @@ def _compare(pt_dets, onnx_dets, iou_threshold):
     is_close = (
         len(pt_remaining) == 0
         and len(onnx_remaining) == 0
-        and _safe_stat(ious, min, 0.0) >= iou_threshold
-        and _safe_stat(conf_diffs, max, 0.0) <= 0.02
+        and _compute_stat_or_default(ious, min, 0.0) >= iou_threshold
+        and _compute_stat_or_default(conf_diffs, max, 0.0) <= 0.02
     )
 
     return {
         'matched_pairs': len(matches),
         'pt_unmatched': len(pt_remaining),
         'onnx_unmatched': len(onnx_remaining),
-        'max_bbox_l1': _safe_stat(bbox_l1, max),
-        'mean_bbox_l1': _safe_stat(bbox_l1, np.mean),
-        'max_conf_abs_diff': _safe_stat(conf_diffs, max),
-        'mean_conf_abs_diff': _safe_stat(conf_diffs, np.mean),
-        'min_iou': _safe_stat(ious, min),
-        'mean_iou': _safe_stat(ious, np.mean),
+        'max_bbox_l1': _compute_stat_or_default(bbox_l1, max),
+        'mean_bbox_l1': _compute_stat_or_default(bbox_l1, np.mean),
+        'max_conf_abs_diff': _compute_stat_or_default(conf_diffs, max),
+        'mean_conf_abs_diff': _compute_stat_or_default(conf_diffs, np.mean),
+        'min_iou': _compute_stat_or_default(ious, min),
+        'mean_iou': _compute_stat_or_default(ious, np.mean),
         'is_close': is_close,
     }
 
@@ -303,7 +309,7 @@ def _validate_model(model_name, output_dir, image_path, detection_threshold, iou
     return asdict(summary)
 
 
-def parse_args():
+def _parse_args():
     """Parse CLI arguments."""
 
     parser = argparse.ArgumentParser()
@@ -318,7 +324,7 @@ def parse_args():
 def main():
     """Export and validate both target MDv1000 models."""
 
-    args = parse_args()
+    args = _parse_args()
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     image_path = args.image_path
@@ -349,7 +355,8 @@ def main():
                 'is_close': False,
             }
             summaries.append(error_record)
-            print(f'WARNING: failed processing {model_name}: {e}')
+            print(f'WARNING: failed processing {model_name}: {type(e).__name__}: {e}')
+            traceback.print_exc()
 
     summary_path = os.path.join(args.output_dir, 'validation_summary.json')
     with open(summary_path, 'w', encoding='utf-8') as f:

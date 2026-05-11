@@ -3,6 +3,9 @@ name: export mdv1000 onnx
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   export-and-validate:
     runs-on: ubuntu-latest
