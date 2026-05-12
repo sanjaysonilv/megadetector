@@ -25,6 +25,7 @@ jobs:
           pip install -e .
           pip install onnxruntime
           pip install ultralytics
+          pip install yolov9pip==0.0.4
           pip install onnxscript
 
       - name: Export and validate ONNX models
