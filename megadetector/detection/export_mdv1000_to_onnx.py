@@ -5,6 +5,7 @@ Large exports may produce sidecar .onnx.data files when external tensor data is 
 """
 
 import argparse
+import inspect
 import json
 import os
 import traceback
@@ -82,22 +83,33 @@ def _export_model_to_onnx(model, example_input, onnx_path):
         # are not accepted by the DirectML execution provider.
     )
 
+    def _export_once(export_kwargs):
+        try:
+            torch.onnx.export(
+                wrapped,
+                example_input,
+                onnx_path,
+                external_data=True,
+                **export_kwargs,
+            )
+        except TypeError:
+            # Older PyTorch versions may not support the external_data argument.
+            torch.onnx.export(
+                wrapped,
+                example_input,
+                onnx_path,
+                **export_kwargs,
+            )
+
     try:
-        torch.onnx.export(
-            wrapped,
-            example_input,
-            onnx_path,
-            external_data=True,
-            **kwargs,
-        )
-    except TypeError:
-        # Older PyTorch versions may not support the external_data argument.
-        torch.onnx.export(
-            wrapped,
-            example_input,
-            onnx_path,
-            **kwargs,
-        )
+        _export_once(kwargs)
+    except torch.onnx.errors.OnnxExporterError as export_error:
+        if 'dynamo' not in inspect.signature(torch.onnx.export).parameters:
+            raise export_error
+        print('Primary ONNX export path failed, retrying with legacy exporter (dynamo=False).')
+        legacy_kwargs = dict(kwargs)
+        legacy_kwargs['dynamo'] = False
+        _export_once(legacy_kwargs)
 
 
 def _run_pytorch_raw(detector, batch_tensor):
