@@ -82,22 +82,36 @@ def _export_model_to_onnx(model, example_input, onnx_path):
         # are not accepted by the DirectML execution provider.
     )
 
+    def _export_once(export_kwargs):
+        try:
+            torch.onnx.export(
+                wrapped,
+                example_input,
+                onnx_path,
+                external_data=True,
+                **export_kwargs,
+            )
+        except TypeError:
+            # Older PyTorch versions may not support the external_data argument.
+            torch.onnx.export(
+                wrapped,
+                example_input,
+                onnx_path,
+                **export_kwargs,
+            )
+
     try:
-        torch.onnx.export(
-            wrapped,
-            example_input,
-            onnx_path,
-            external_data=True,
-            **kwargs,
-        )
-    except TypeError:
-        # Older PyTorch versions may not support the external_data argument.
-        torch.onnx.export(
-            wrapped,
-            example_input,
-            onnx_path,
-            **kwargs,
-        )
+        _export_once(kwargs)
+    except Exception as export_error:
+        print('Primary ONNX export path failed, retrying with legacy exporter (dynamo=False).')
+        legacy_kwargs = dict(kwargs)
+        legacy_kwargs['dynamo'] = False
+        try:
+            _export_once(legacy_kwargs)
+        except TypeError as legacy_type_error:
+            if 'dynamo' in str(legacy_type_error):
+                raise export_error
+            raise
 
 
 def _run_pytorch_raw(detector, batch_tensor):
