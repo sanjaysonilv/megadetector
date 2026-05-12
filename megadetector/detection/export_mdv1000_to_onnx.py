@@ -77,7 +77,9 @@ def _export_model_to_onnx(model, example_input, onnx_path):
         do_constant_folding=True,
         input_names=['images'],
         output_names=['predictions'],
-        dynamic_axes={'images': {0: 'batch_size'}, 'predictions': {0: 'batch_size'}},
+        # Keep input/output shapes static for DirectML compatibility.
+        # Dynamic batch axes can produce runtime-computed Reshape inputs that
+        # are not accepted by DMLExecutionProvider.
     )
 
     try:
