@@ -79,7 +79,7 @@ def _export_model_to_onnx(model, example_input, onnx_path):
         output_names=['predictions'],
         # Keep input/output shapes static for DirectML compatibility.
         # Dynamic batch axes can produce runtime-computed Reshape inputs that
-        # are not accepted by DMLExecutionProvider.
+        # are not accepted by the DirectML execution provider.
     )
 
     try:
